@@ -2,18 +2,22 @@ import sys
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPlainTextEdit, QPushButton, QLabel, 
-                               QFileDialog, QMessageBox, QSizePolicy)
+                               QFileDialog, QMessageBox, QSizePolicy, QComboBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QFont
 import wordcloud
 from io import BytesIO
 import re
 
+def check_file_exists(file_path):
+    return Path.exists(Path(file_path)) and Path.is_file(Path(file_path))
+
 class WordCloudGenerator(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.initUI()
         self.wordcloud_image = None
+        self.last_valid_index = 0
+        self.initUI()
         
     def initUI(self):
         self.setWindowTitle("词云生成器")
@@ -42,6 +46,12 @@ class WordCloudGenerator(QMainWindow):
         self.text_edit.setPlaceholderText("请输入词语，每行一个...")
         self.text_edit.setMinimumHeight(200)
         main_layout.addWidget(self.text_edit)
+        
+        # 字体选择
+        self.font_combo = QComboBox()
+        self.font_combo.addItems(["得意黑", "默认", "+ 添加新字体"] if check_file_exists("./SMILEYSANS.TTF") else ["默认", "+ 添加新选项"])
+        self.font_combo.currentIndexChanged.connect(self.on_selection_changed)
+        main_layout.addWidget(self.font_combo)
         
         # 按钮布局
         button_layout = QHBoxLayout()
@@ -77,7 +87,26 @@ class WordCloudGenerator(QMainWindow):
         
         # 添加弹性空间使所有元素居中
         main_layout.addStretch(1)
-        
+
+    def on_selection_changed(self, index):
+        if self.font_combo.itemText(index) == "+ 添加新字体":
+            self.font_combo.setCurrentIndex(self.last_valid_index)
+            text, ok = QFileDialog.getOpenFileName(
+                self,
+                "选择字体",
+                str(Path.home()),
+                "TTF Fonts (*.ttf);;OTF Fonts (*.otf);;All Files (*)"
+            )
+            if ok and text.strip():
+                if text.strip() not in [self.font_combo.itemText(i) for i in range(self.font_combo.count() - 1)]:
+                    self.font_combo.insertItem(self.font_combo.count() - 1, text.strip())
+                    self.font_combo.setCurrentText(text.strip())
+                    self.last_valid_index = self.font_combo.currentIndex()
+                else:
+                    QMessageBox.warning(self, "重复选项", "该选项已存在!")
+        else:
+            self.last_valid_index = index
+
     def generate_wordcloud(self):
         text = self.text_edit.toPlainText().strip()
         if not text:
@@ -109,12 +138,13 @@ class WordCloudGenerator(QMainWindow):
                 clean_word = control_chars_pattern.sub('', word)
                 # 将净化后的单词和原来的频率存入新字典
                 clean_word_freq[clean_word] = clean_word_freq.get(clean_word, 0) + freq
+            font = self.font_combo.currentText()
             # 创建词云对象
             wc = wordcloud.WordCloud(
                 width=800,
                 height=600,
                 background_color='white',
-                font_path=("./SMILEYSANS.TTF" if (Path.exists(Path("./SMILEYSANS.TTF")) and Path.is_file(Path("./SMILEYSANS.TTF"))) else None),  # 如果自带字体存在则使用自带字体,否则使用默认字体
+                font_path=("./SMILEYSANS.TTF" if font == "得意黑" else (None if font == "默认" else font)),
                 colormap='viridis',
                 prefer_horizontal=0.8  # 调整水平放置词的概率
             )
@@ -144,7 +174,7 @@ class WordCloudGenerator(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "错误", f"生成词云时出错：{str(e)}")
-    
+
     def download_wordcloud(self):
         if self.wordcloud_image is None:
             QMessageBox.warning(self, "警告", "请先生成词云！")
