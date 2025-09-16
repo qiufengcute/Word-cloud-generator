@@ -2,7 +2,7 @@
 
 一个开箱即用的桌面应用程序，轻松将文本转换为美观的词云图。
 
-**当前版本：** `v1.0.0` | **发布日期：** `2025-09-12` | **开发者：** `Qiufeng`
+**当前版本：** `v1.0.1` | **发布日期：** `2025-09-12` | **开发者：** `Qiufeng`
 
 ---
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
@@ -35,7 +35,7 @@
 ## 📥 2. 下载与安装
 
 1.  前往项目的 **[Release发布页面](https://github.com/qiufengcute/Word-cloud-generator/releases)**。
-2.  下载最新版本（`v1.0.0`）的exe文件（`Windows-x64.exe`）。
+2.  下载最新版本的exe文件（`Windows-x64.exe`）。
 3.  运行下载的exe文件。
 
 > **⚠️ 注意**：目前仅支持Windows系统。
