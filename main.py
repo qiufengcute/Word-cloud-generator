@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QFont
 
+__version__ = "1.1.1"
+
 translation_dict = {
     "zh": {
         "词云生成器": "词云生成器",
@@ -112,11 +114,10 @@ def check_file_exists(file_path):
     return Path.exists(Path(file_path)) and Path.is_file(Path(file_path))
 
 class WordCloudGenerator(QMainWindow):
-    def __init__(self,lang):
+    def __init__(self):
         super().__init__()
         self.wordcloud_image = None
         self.last_valid_index = 0
-        self.lang = lang
         self.initUI()
         
     def initUI(self):
@@ -132,6 +133,9 @@ class WordCloudGenerator(QMainWindow):
         main_layout.setSpacing(15)
         main_layout.setContentsMargins(20, 20, 20, 20)
         
+        # 标题区域
+        title_layout = QHBoxLayout()
+        
         # 标题
         title_label = QLabel(tr(lang, "词云生成器"))
         title_font = QFont()
@@ -139,7 +143,17 @@ class WordCloudGenerator(QMainWindow):
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(title_label)
+        
+        # VERSION文本
+        self.top_right_text = QLabel(f"VERSION {__version__}")
+        self.top_right_text.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        title_layout.addStretch()
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+        title_layout.addWidget(self.top_right_text)
+        
+        main_layout.addLayout(title_layout)
         
         # 输入框
         self.text_edit = QPlainTextEdit()
@@ -224,7 +238,8 @@ class WordCloudGenerator(QMainWindow):
         if not word_freq:
             QMessageBox.warning(self, tr(lang, "警告"), tr(lang, "没有有效的词语输入!"))
             return
-        
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         # 生成词云
         try:
             # 净化文本
@@ -274,6 +289,8 @@ class WordCloudGenerator(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, tr(lang, "错误"), f"{tr(lang, '生成词云时出错')}:{str(e)}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def download_wordcloud(self):
         if self.wordcloud_image is None:
@@ -305,6 +322,6 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     lang = args.lang
     app = QApplication(sys.argv)
-    window = WordCloudGenerator(lang)
+    window = WordCloudGenerator()
     window.show()
     sys.exit(app.exec())
