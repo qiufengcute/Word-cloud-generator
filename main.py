@@ -6,19 +6,19 @@ from pathlib import Path
 from io import BytesIO
 import re
 import wordcloud
+import jieba
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPlainTextEdit, QPushButton, QLabel, 
                                QFileDialog, QMessageBox, QSizePolicy, QComboBox)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QFont
+from PySide6.QtGui import QPixmap, QFont, QIcon
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 translation_dict = {
     "zh": {
         "词云生成器": "词云生成器",
         "请输入词语，每行一个...": "请输入词语，每行一个...",
-        "得意黑": "得意黑", 
         "默认": "默认",
         "+ 添加新字体": "+ 添加新字体",
         "生成": "生成",
@@ -40,7 +40,6 @@ translation_dict = {
     "en": {
         "词云生成器": "Word Cloud Generator",
         "请输入词语，每行一个...": "Enter words, one per line...",
-        "得意黑": "Smiley Sans",
         "默认": "Default",
         "+ 添加新字体": "+ Add New Font",
         "生成": "Generate",
@@ -69,15 +68,109 @@ def tr(lang, key):
 
 def get_font_name(font_path):
     """获取字体的真正名称"""
+    import re
+    
+    def clean_font_name(name):
+        """清理字体名称中的特殊字符"""
+        if not name:
+            return ""
+        # 移除控制字符和特殊符号
+        name = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', name)
+        # 移除常见的特殊符号（但保留中文、英文、数字）
+        name = re.sub(r'[^\u4e00-\u9fa5\u3400-\u4dbf\u20000-\u2a6df\u2a700-\u2b73f\u2b740-\u2b81f\u2b820-\u2ceaf\w\s\-_.()]', '', name)
+        # 移除多余的空白字符
+        name = re.sub(r'\s+', ' ', name).strip()
+        return name
+    
     try:
         font = TTFont(font_path)
-        # 获取字体名称（通常从name表的英文字体名或中文字体名获取）
+        # 尝试获取中文字体名称
         for record in font['name'].names:
+            # 优先查找中文字体名称 (nameID=4 是完整字体名称)
             if record.nameID == 4:
-                return record.string.decode('utf-16-be') if hasattr(record.string, 'decode') else str(record.string)
-        return os.path.basename(font_path)  # 如果获取失败，返回文件名
-    except:
-        return os.path.basename(font_path)  # 如果读取失败，返回文件名
+                # Windows 平台中文编码
+                if record.platformID == 3 and record.platEncID in (1, 10):  # Windows Unicode
+                    try:
+                        name = record.string.decode('utf-16-be').strip('\x00')
+                        if name and not name.startswith('?') and name.strip():  # 检查是否是有效名称
+                            cleaned_name = clean_font_name(name)
+                            if cleaned_name:
+                                return cleaned_name
+                    except:
+                        pass
+                # Macintosh 平台
+                elif record.platformID == 1:
+                    try:
+                        name = record.string.decode('mac_roman').strip('\x00')
+                        if name and not name.startswith('?') and name.strip():
+                            cleaned_name = clean_font_name(name)
+                            if cleaned_name:
+                                return cleaned_name
+                    except:
+                        pass
+                # 其他编码尝试
+                else:
+                    encodings = ['utf-8', 'gbk', 'gb2312', 'big5', 'latin1']
+                    for encoding in encodings:
+                        try:
+                            name = record.string.decode(encoding).strip('\x00')
+                            if name and not name.startswith('?') and name.strip():
+                                cleaned_name = clean_font_name(name)
+                                if cleaned_name:
+                                    return cleaned_name
+                        except:
+                            continue
+        
+        # 如果没有找到完整字体名称，尝试查找字体家族名称 (nameID=1)
+        for record in font['name'].names:
+            if record.nameID == 1:
+                # Windows 平台中文编码
+                if record.platformID == 3 and record.platEncID in (1, 10):  # Windows Unicode
+                    try:
+                        name = record.string.decode('utf-16-be').strip('\x00')
+                        if name and not name.startswith('?') and name.strip():
+                            cleaned_name = clean_font_name(name)
+                            if cleaned_name:
+                                return cleaned_name
+                    except:
+                        pass
+                # Macintosh 平台
+                elif record.platformID == 1:
+                    try:
+                        name = record.string.decode('mac_roman').strip('\x00')
+                        if name and not name.startswith('?') and name.strip():
+                            cleaned_name = clean_font_name(name)
+                            if cleaned_name:
+                                return cleaned_name
+                    except:
+                        pass
+                # 其他编码尝试
+                else:
+                    encodings = ['utf-8', 'gbk', 'gb2312', 'big5', 'latin1']
+                    for encoding in encodings:
+                        try:
+                            name = record.string.decode(encoding).strip('\x00')
+                            if name and not name.startswith('?') and name.strip():
+                                cleaned_name = clean_font_name(name)
+                                if cleaned_name:
+                                    return cleaned_name
+                        except:
+                            continue
+        
+        # 如果还是获取不到，返回文件名（去掉扩展名）
+        font_filename = os.path.basename(font_path)
+        name_without_ext = os.path.splitext(font_filename)[0]
+        cleaned_name = clean_font_name(name_without_ext)
+        return cleaned_name if cleaned_name else "Unknown Font"
+    except Exception as e:
+        # 如果读取失败，返回文件名（去掉扩展名）
+        try:
+            font_filename = os.path.basename(font_path)
+            name_without_ext = os.path.splitext(font_filename)[0]
+            cleaned_name = clean_font_name(name_without_ext)
+            return cleaned_name if cleaned_name else "Unknown Font"
+        except:
+            return "Unknown Font"
 
 def remove_duplicate_fonts_by_name(font_list):
     """根据字体名称去重"""
@@ -96,7 +189,7 @@ def remove_duplicate_fonts_by_name(font_list):
     
     return unique_fonts
 
-def get_fonts(lang="zh"):
+def get_fonts():
     font_extensions = {'.ttf', '.otf'}
     fonts_path = Path("C:/Windows/Fonts")
     
@@ -106,23 +199,35 @@ def get_fonts(lang="zh"):
     ]
 
     if check_file_exists("./SMILEYSANS.TTF"):
-        fonts_list.append(tr(lang, "得意黑"))
+        fonts_list.append("./SMILEYSANS.TTF")
 
-    return remove_duplicate_fonts_by_name(fonts_list)
+    fonts_list = remove_duplicate_fonts_by_name(fonts_list)
+    res = {}
+    for i in fonts_list:
+        res[get_font_name(i)] = i
+
+    return res
 
 def check_file_exists(file_path):
     return Path.exists(Path(file_path)) and Path.is_file(Path(file_path))
 
 class WordCloudGenerator(QMainWindow):
-    def __init__(self):
+    def __init__(self, lang="zh"):
         super().__init__()
+        self.lang = lang
+        self.font_path_index = {}
         self.wordcloud_image = None
         self.last_valid_index = 0
         self.initUI()
         
     def initUI(self):
-        self.setWindowTitle(tr(lang, "词云生成器"))
+        self.setWindowTitle(tr(self.lang, "词云生成器"))
         self.setGeometry(100, 100, 800, 600)
+        
+        # 设置窗口图标
+        icon_path = "./icon.ico"
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         # 中央部件
         central_widget = QWidget()
@@ -137,7 +242,7 @@ class WordCloudGenerator(QMainWindow):
         title_layout = QHBoxLayout()
         
         # 标题
-        title_label = QLabel(tr(lang, "词云生成器"))
+        title_label = QLabel(tr(self.lang, "词云生成器"))
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -157,13 +262,19 @@ class WordCloudGenerator(QMainWindow):
         
         # 输入框
         self.text_edit = QPlainTextEdit()
-        self.text_edit.setPlaceholderText(tr(lang, "请输入词语，每行一个..."))
+        self.text_edit.setPlaceholderText(tr(self.lang, "请输入词语，每行一个..."))
         self.text_edit.setMinimumHeight(200)
         main_layout.addWidget(self.text_edit)
-        
+
+        # 字体
+        self.font_path_index = get_fonts(self.lang)
+        self.font_path_index[tr(self.lang, "默认")] = None
+
         # 字体选择
         self.font_combo = QComboBox()
-        self.font_combo.addItems(get_fonts(lang) + [tr(lang, "默认"), tr(lang, "+ 添加新字体")])
+        self.font_combo.addItems(self.font_path_index.keys())
+        # 添加"添加新字体"选项
+        self.font_combo.addItem(tr(self.lang, "+ 添加新字体"))
         self.font_combo.currentIndexChanged.connect(self.on_selection_changed)
         main_layout.addWidget(self.font_combo)
         
@@ -171,8 +282,16 @@ class WordCloudGenerator(QMainWindow):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         
+        # 分割文本按钮
+        self.split_button = QPushButton(tr(self.lang, "分割文本"))
+        self.split_button.clicked.connect(self.split_text)
+        self.split_button.setFixedSize(100, 40)
+        button_layout.addWidget(self.split_button)
+        
+        button_layout.addSpacing(20)
+        
         # 生成按钮
-        self.generate_button = QPushButton(tr(lang, "生成"))
+        self.generate_button = QPushButton(tr(self.lang, "生成"))
         self.generate_button.clicked.connect(self.generate_wordcloud)
         self.generate_button.setFixedSize(100, 40)
         button_layout.addWidget(self.generate_button)
@@ -180,7 +299,7 @@ class WordCloudGenerator(QMainWindow):
         button_layout.addSpacing(20)
         
         # 下载按钮（初始禁用）
-        self.download_button = QPushButton(tr(lang, "下载"))
+        self.download_button = QPushButton(tr(self.lang, "下载"))
         self.download_button.clicked.connect(self.download_wordcloud)
         self.download_button.setEnabled(False)
         self.download_button.setFixedSize(100, 40)
@@ -195,7 +314,7 @@ class WordCloudGenerator(QMainWindow):
         self.image_label.setMinimumSize(400, 300)
         self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.image_label.setStyleSheet("border: 1px solid #ccc; background-color: #f8f8f8;")
-        self.image_label.setText(tr(lang, "词云预览"))
+        self.image_label.setText(tr(self.lang, "词云预览"))
         self.image_label.hide()
         main_layout.addWidget(self.image_label)
         
@@ -203,28 +322,31 @@ class WordCloudGenerator(QMainWindow):
         main_layout.addStretch(1)
 
     def on_selection_changed(self, index):
-        if self.font_combo.itemText(index) == tr(lang, "+ 添加新字体"):
+        if self.font_combo.itemText(index) == tr(self.lang, "+ 添加新字体"):
             self.font_combo.setCurrentIndex(self.last_valid_index)
             text, ok = QFileDialog.getOpenFileName(
                 self,
-                tr(lang, "选择字体"),
+                tr(self.lang, "选择字体"),
                 str(Path.home()),
                 "TTF Fonts (*.ttf);;OTF Fonts (*.otf);;All Files (*)"
             )
             if ok and text.strip():
-                if text.strip() not in [self.font_combo.itemText(i) for i in range(self.font_combo.count() - 1)]:
-                    self.font_combo.insertItem(self.font_combo.count() - 1, text.strip())
-                    self.font_combo.setCurrentText(text.strip())
+                # 获取字体的真实名称
+                font_name = get_font_name(text.strip())
+                if font_name not in self.font_path_index:
+                    self.font_combo.insertItem(self.font_combo.count() - 1, font_name)
+                    self.font_path_index[font_name] = text.strip()
+                    self.font_combo.setCurrentText(font_name)
                     self.last_valid_index = self.font_combo.currentIndex()
                 else:
-                    QMessageBox.warning(self, tr(lang, "重复选项"), tr(lang, "该选项已存在!"))
+                    QMessageBox.warning(self, tr(self.lang, "重复选项"), tr(self.lang, "该选项已存在!"))
         else:
             self.last_valid_index = index
 
     def generate_wordcloud(self):
         text = self.text_edit.toPlainText().strip()
         if not text:
-            QMessageBox.warning(self, tr(lang, "警告"), tr(lang, "请输入文本内容!"))
+            QMessageBox.warning(self, tr(self.lang, "警告"), tr(self.lang, "请输入文本内容!"))
             return
         
         # 处理文本，每行作为一个词语
@@ -236,7 +358,7 @@ class WordCloudGenerator(QMainWindow):
                 word_freq[line] = word_freq.get(line, 0) + 1
         
         if not word_freq:
-            QMessageBox.warning(self, tr(lang, "警告"), tr(lang, "没有有效的词语输入!"))
+            QMessageBox.warning(self, tr(self.lang, "警告"), tr(self.lang, "没有有效的词语输入!"))
             return
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -259,7 +381,7 @@ class WordCloudGenerator(QMainWindow):
                 width=800,
                 height=600,
                 background_color='white',
-                font_path=("./SMILEYSANS.TTF" if font == tr(lang, "得意黑") else (None if font == tr(lang, "默认") else font)),
+                font_path=self.font_path_index[font],
                 colormap='viridis',
                 prefer_horizontal=0.8  # 调整水平放置词的概率
             )
@@ -288,19 +410,19 @@ class WordCloudGenerator(QMainWindow):
             self.download_button.setEnabled(True)
             
         except Exception as e:
-            QMessageBox.critical(self, tr(lang, "错误"), f"{tr(lang, '生成词云时出错')}:{str(e)}")
+            QMessageBox.critical(self, tr(self.lang, "错误"), f"{tr(self.lang, '生成词云时出错')}:{str(e)}")
         finally:
             QApplication.restoreOverrideCursor()
 
     def download_wordcloud(self):
         if self.wordcloud_image is None:
-            QMessageBox.warning(self, tr(lang, "警告"), tr(lang, "请先生成词云!"))
+            QMessageBox.warning(self, tr(self.lang, "警告"), tr(self.lang, "请先生成词云!"))
             return
         
         # 获取保存路径
         file_path, _ = QFileDialog.getSaveFileName(
             self, 
-            tr(lang, "保存词云图片"), 
+            tr(self.lang, "保存词云图片"), 
             str(Path.home() / "wordcloud.png"),
             "PNG Images (*.png);;JPEG Images (*.jpg *.jpeg);;All Files (*)"
         )
@@ -308,9 +430,48 @@ class WordCloudGenerator(QMainWindow):
         if file_path:
             try:
                 self.wordcloud_image.save(file_path)
-                QMessageBox.information(self, tr(lang, "成功"), f"{tr(lang, '词云已保存到')}:{file_path}")
+                QMessageBox.information(self, tr(self.lang, "成功"), f"{tr(self.lang, '词云已保存到')}:{file_path}")
             except Exception as e:
-                QMessageBox.critical(self, tr(lang, "错误"), f"{tr(lang, '保存图片时出错')}:{str(e)}")
+                QMessageBox.critical(self, tr(self.lang, "错误"), f"{tr(self.lang, '保存图片时出错')}:{str(e)}")
+
+    def split_text(self):
+        """分割文本功能"""
+        # 获取输入框中的文本
+        text = self.text_edit.toPlainText().strip()
+        if not text:
+            QMessageBox.warning(self, tr(self.lang, "警告"), tr(self.lang, "请输入文本内容!"))
+            return
+        
+        # 去除隐藏字符
+        cleaned_text = re.sub(r'[\x00-\x1f\x7f-\x9f\u200b\u200c\u200d\u200e\u200f\ufeff\u202a-\u202e]', '', text)
+        
+        # 分割文本
+        lines = []
+        
+        # 检查是否包含中文
+        if re.search(r'[\u4e00-\u9fff]', cleaned_text):
+            # 使用jieba进行中文分词
+            words = jieba.lcut(cleaned_text)
+            lines = [word.strip() for word in words if word.strip()]
+        else:
+            # 对于其他语言，使用正则表达式分割
+            # 按空格、标点符号等分割
+            import nltk
+            try:
+                # 尝试使用nltk进行分词
+                tokens = nltk.word_tokenize(cleaned_text)
+                lines = [token.strip() for token in tokens if token.strip()]
+            except:
+                # 如果nltk不可用，使用简单的正则表达式分割
+                tokens = re.findall(r'\b\w+\b|[^\w\s]', cleaned_text, re.UNICODE)
+                lines = [token.strip() for token in tokens if token.strip()]
+        
+        # 将分割后的文本按行输入到输入框
+        self.text_edit.setPlainText('\n'.join(lines))
+
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        event.accept()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate a word cloud.')
@@ -322,6 +483,6 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     lang = args.lang
     app = QApplication(sys.argv)
-    window = WordCloudGenerator()
+    window = WordCloudGenerator(lang)
     window.show()
     sys.exit(app.exec())
